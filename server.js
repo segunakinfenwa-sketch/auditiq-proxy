@@ -6,11 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 // ── MIDDLEWARE ────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: [
-    'https://useauditiq.netlify.app',
-    'http://localhost:3000',
-    'http://127.0.0.1:5500' // for local testing
-  ],
+  origin: '*',
   methods: ['POST', 'GET'],
   allowedHeaders: ['Content-Type']
 }));
