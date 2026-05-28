@@ -4,91 +4,91 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── MIDDLEWARE ────────────────────────────────────────────────────────────────
-app.use(cors({
-  origin: '*',
-  methods: ['POST', 'GET'],
-  allowedHeaders: ['Content-Type']
-}));
+app.use(cors({ origin: '*', methods: ['POST', 'GET'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json({ limit: '10kb' }));
 
-// ── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'AuditIQ API Proxy',
-    version: '1.0.0'
-  });
+  res.json({ status: 'ok', service: 'AuditIQ API Proxy', version: '1.0.0' });
 });
 
-// ── DEBUG ENDPOINT (temporary) ───────────────────────────────────────────────
 app.get('/debug', (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY || 'NOT SET';
   res.json({
     keySet: !!process.env.ANTHROPIC_API_KEY,
     keyLength: key.length,
-    keyStart: key.substring(0, 12),
+    keyStart: key.substring(0, 15),
     keyEnd: key.substring(key.length - 4),
     hasLineBreak: key.includes('\n') || key.includes('\r'),
-    hasSpaces: key.includes(' ')
+    hasSpaces: key.includes(' '),
+    nodeVersion: process.version
   });
 });
 
-// ── PROXY ENDPOINT ────────────────────────────────────────────────────────────
 app.post('/audit', async (req, res) => {
   const { systemPrompt, userMessage } = req.body;
 
-  // Basic validation
   if (!systemPrompt || !userMessage) {
     return res.status(400).json({ error: 'Missing systemPrompt or userMessage' });
   }
 
-  if (typeof systemPrompt !== 'string' || typeof userMessage !== 'string') {
-    return res.status(400).json({ error: 'Invalid input types' });
-  }
-
-  if (userMessage.length > 500) {
-    return res.status(400).json({ error: 'URL too long' });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'API key not configured' });
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }]
-      })
+    const https = require('https');
+    
+    const payload = JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }]
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Anthropic API error:', response.status, errText);
-      // Return full error details for debugging
+    const result = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+          'x-api-key': apiKey.trim(),
+          'anthropic-version': '2023-06-01'
+        }
+      };
+
+      const req = https.request(options, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => {
+          resolve({ status: response.statusCode, body: data });
+        });
+      });
+
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+
+    if (result.status !== 200) {
+      console.error('Anthropic error:', result.status, result.body);
       return res.status(502).json({ 
         error: 'AI service error', 
-        status: response.status,
-        detail: errText,
-        keyUsed: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.substring(0,15) + '...' : 'NOT SET'
+        status: result.status,
+        detail: result.body
       });
     }
 
-    const data = await response.json();
-    return res.json(data);
+    return res.json(JSON.parse(result.body));
 
   } catch (err) {
     console.error('Proxy error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error', detail: err.message });
   }
 });
 
-// ── START ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`AuditIQ proxy running on port ${PORT}`);
 });
