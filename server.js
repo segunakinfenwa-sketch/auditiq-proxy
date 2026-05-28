@@ -21,6 +21,19 @@ app.get('/', (req, res) => {
   });
 });
 
+// ── DEBUG ENDPOINT (temporary) ───────────────────────────────────────────────
+app.get('/debug', (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY || 'NOT SET';
+  res.json({
+    keySet: !!process.env.ANTHROPIC_API_KEY,
+    keyLength: key.length,
+    keyStart: key.substring(0, 12),
+    keyEnd: key.substring(key.length - 4),
+    hasLineBreak: key.includes('\n') || key.includes('\r'),
+    hasSpaces: key.includes(' ')
+  });
+});
+
 // ── PROXY ENDPOINT ────────────────────────────────────────────────────────────
 app.post('/audit', async (req, res) => {
   const { systemPrompt, userMessage } = req.body;
