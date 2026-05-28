@@ -70,7 +70,13 @@ app.post('/audit', async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Anthropic API error:', response.status, errText);
-      return res.status(502).json({ error: 'AI service error', status: response.status });
+      // Return full error details for debugging
+      return res.status(502).json({ 
+        error: 'AI service error', 
+        status: response.status,
+        detail: errText,
+        keyUsed: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.substring(0,15) + '...' : 'NOT SET'
+      });
     }
 
     const data = await response.json();
