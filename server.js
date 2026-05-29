@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: '*', methods: ['POST', 'GET'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json({ limit: '10kb' }));
 
+// Clean API key — strip ALL whitespace and non-printable characters
 function getCleanKey() {
   const raw = process.env.ANTHROPIC_API_KEY || '';
   return raw.replace(/[^\x20-\x7E]/g, '').trim();
@@ -71,3 +72,32 @@ app.post('/audit', async (req, res) => {
 
       const request = https.request(options, (response) => {
         let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => resolve({ status: response.statusCode, body: data }));
+      });
+
+      request.on('error', reject);
+      request.write(payload);
+      request.end();
+    });
+
+    if (result.status !== 200) {
+      console.error('Anthropic error:', result.status, result.body);
+      return res.status(502).json({
+        error: 'AI service error',
+        status: result.status,
+        detail: result.body
+      });
+    }
+
+    return res.json(JSON.parse(result.body));
+
+  } catch (err) {
+    console.error('Proxy error:', err.message);
+    return res.status(500).json({ error: 'Internal server error', detail: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`AuditIQ proxy v2 running on port ${PORT}`);
+});
